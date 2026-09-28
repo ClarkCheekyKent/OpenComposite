@@ -212,6 +212,8 @@ public:
 
 	/** Creates a new named overlay. All overlays start hidden and with default settings. */
 	vr::EVROverlayError CreateOverlay(const char* pchOverlayKey, const char* pchOverlayName, vr::VROverlayHandle_t* pOverlayHandle);
+	vr::EVROverlayError CreateSubviewOverlay(vr::VROverlayHandle_t parentOverlayHandle, const char* pchSubviewOverlayKey,
+	    const char* pchSubviewOverlayName, vr::VROverlayHandle_t* pSubviewOverlayHandle);
 
 	/** Destroys the specified overlay. When an application calls VR_Shutdown all overlays created by that app are
 	 * automatically destroyed. */
@@ -376,6 +378,7 @@ public:
 	vr::EVROverlayError SetOverlayTransformProjection(vr::VROverlayHandle_t ulOverlayHandle,
 	    vr::ETrackingUniverseOrigin eTrackingOrigin, const vr::HmdMatrix34_t* pmatTrackingOriginToOverlayTransform,
 	    const OOVR_VROverlayProjection_t* pProjection, vr::EVREye eEye);
+	vr::EVROverlayError SetSubviewPosition(vr::VROverlayHandle_t ulOverlayHandle, float fX, float fY);
 
 	/** Shows the VR overlay.  For dashboard overlays, only the Dashboard Manager is allowed to call this. */
 	vr::EVROverlayError ShowOverlay(vr::VROverlayHandle_t ulOverlayHandle);

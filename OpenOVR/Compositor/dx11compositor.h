@@ -30,6 +30,9 @@ protected:
 	ID3D11SamplerState* quad_sampleState;
 	ID3D11VertexShader* fs_vshader;
 	ID3D11PixelShader* fs_pshader;
+	ID3D11PixelShader* fs_convert_pshader;
+	ID3D11Buffer* convert_constants;
+	bool formatConversionNeeded = false;
 
 	std::vector<XrSwapchainImageD3D11KHR> imagesHandles;
 	std::vector<ID3D11RenderTargetView*> swapchain_rtvs;

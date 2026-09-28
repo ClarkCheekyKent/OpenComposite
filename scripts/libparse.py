@@ -9,7 +9,7 @@ regex = re.compile(regex_src)
 arg_src = r"(?P<type>[^=]+ \**)(?P<name>\w+)(?: = (?P<default>.*))?"
 argr = re.compile(arg_src)
 
-typedecl = re.compile(r"^(?:enum|struct)\s+(?P<name>\w+)$")
+typedecl = re.compile(r"^(?:enum(?: class)?|struct)\s+(?P<name>\w+)(?:\s*:\s*\w+)?$")
 
 typedef = re.compile(r"^typedef\s+(?P<def>[\w\s\d_\*&]+)\s+(?P<name>\w+);$")
 typedef_struct = re.compile(r"^typedef\s+(?:struct|union)$")

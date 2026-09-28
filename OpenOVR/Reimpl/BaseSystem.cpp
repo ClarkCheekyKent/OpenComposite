@@ -118,6 +118,16 @@ bool BaseSystem::ComputeDistortion(EVREye eEye, float fU, float fV, DistortionCo
 	return BackendManager::Instance().GetPrimaryHMD()->ComputeDistortion(eEye, fU, fV, out);
 }
 
+bool BaseSystem::ComputeDistortionSet(EVREye, EVRDistortionChannel, bool, uint32_t nNumCoordinates,
+    const DistortionCoordinate_t*, DistortionCoordinate_t* pOutput)
+{
+	if (pOutput) {
+		for (uint32_t i = 0; i < nNumCoordinates; ++i)
+			pOutput[i] = {};
+	}
+	return false;
+}
+
 HmdMatrix34_t BaseSystem::GetEyeToHeadTransform(EVREye ovr_eye)
 {
 	return BackendManager::Instance().GetPrimaryHMD()->GetEyeToHeadTransform(ovr_eye);
@@ -658,6 +668,14 @@ bool BaseSystem::PollNextEventWithPose(ETrackingUniverseOrigin eOrigin, VREvent_
 	return true;
 }
 
+bool BaseSystem::PollNextEventWithPoseAndOverlays(ETrackingUniverseOrigin eOrigin, VREvent_t* pEvent, uint32_t uncbVREvent,
+    TrackedDevicePose_t* pTrackedDevicePose, VROverlayHandle_t* pulOverlayHandle)
+{
+	if (pulOverlayHandle)
+		*pulOverlayHandle = k_ulOverlayHandleInvalid;
+	return PollNextEventWithPose(eOrigin, pEvent, uncbVREvent, pTrackedDevicePose);
+}
+
 const char* BaseSystem::GetEventTypeNameFromEnum(EVREventType eType)
 {
 	STUBBED();
@@ -666,6 +684,22 @@ const char* BaseSystem::GetEventTypeNameFromEnum(EVREventType eType)
 HiddenAreaMesh_t BaseSystem::GetHiddenAreaMesh(EVREye eEye, EHiddenAreaMeshType type)
 {
 	return BackendManager::Instance().GetPrimaryHMD()->GetHiddenAreaMesh(eEye, type);
+}
+
+bool BaseSystem::GetEyeTrackedFoveationCenter(HmdVector2_t* pNdcLeft, HmdVector2_t* pNdcRight)
+{
+	if (pNdcLeft)
+		*pNdcLeft = {};
+	if (pNdcRight)
+		*pNdcRight = {};
+	return false;
+}
+
+bool BaseSystem::GetEyeTrackedFoveationCenterForProjection(const HmdMatrix44_t*, HmdVector2_t* pNdc)
+{
+	if (pNdc)
+		*pNdc = {};
+	return false;
 }
 
 bool BaseSystem::GetControllerState(vr::TrackedDeviceIndex_t controllerDeviceIndex, vr::VRControllerState_t* controllerState, uint32_t controllerStateSize)
@@ -823,6 +857,11 @@ uint32_t BaseSystem::GetAppContainerFilePaths(VR_OUT_STRING() char* pchBuffer, u
 const char* BaseSystem::GetRuntimeVersion()
 {
 	return "1.16.8";
+}
+
+EVRInitError BaseSystem::SetSDKVersion(uint32_t, uint32_t, uint32_t)
+{
+	return VRInitError_None;
 }
 
 DistortionCoordinates_t BaseSystem::ComputeDistortion(EVREye eEye, float fU, float fV)

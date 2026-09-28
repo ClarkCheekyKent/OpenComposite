@@ -77,7 +77,7 @@ public:
 	bool ImportFromBufferToWorking(const char* pBuffer, uint32_t nImportFlags);
 
 	/** Sets the Collision Bounds in the working copy. */
-	void SetWorkingPerimeter(VR_ARRAY_COUNT(unPointCount) vr::HmdVector2_t* pPointBuffer, uint32_t unPointCount);
+	void SetWorkingPerimeter(VR_ARRAY_COUNT(unPointCount) const vr::HmdVector2_t* pPointBuffer, uint32_t unPointCount);
 
 	/** Shows the chaperone data in the working set to preview in the compositor.*/
 	void ShowWorkingSetPreview();

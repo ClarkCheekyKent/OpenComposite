@@ -15,6 +15,7 @@ GEN_INTERFACE("System", "019")
 GEN_INTERFACE("System", "020")
 GEN_INTERFACE("System", "021")
 GEN_INTERFACE("System", "022")
+GEN_INTERFACE("System", "026")
 
 #include "generated/GVRSystem.gen.h"
 

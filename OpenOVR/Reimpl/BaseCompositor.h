@@ -80,6 +80,9 @@ enum OOVR_EVRCompositorTimingMode {
 	VRCompositorTimingMode_Explicit_ApplicationPerformsPostPresentHandoff = 2,
 };
 
+// Used by IVRCompositor_029; OpenComposite does not provide shared submit textures.
+using OOVR_EVRCompositorTextureUsage = int;
+
 struct OOVR_Compositor_StageRenderSettings {
 	/** Primary color is applied as a tint to (i.e. multiplied with) the model's texture */
 	vr::HmdColor_t m_PrimaryColor = { 1, 1, 1, 1 };
@@ -165,6 +168,10 @@ public:
 	 * Returns VRCompositorError_IndexOutOfRange if unDeviceIndex not less than k_unMaxTrackedDeviceCount otherwise VRCompositorError_None.
 	 * It is okay to pass NULL for either pose if you only want one of the values. */
 	ovr_enum_t GetLastPoseForTrackedDeviceIndex(vr::TrackedDeviceIndex_t unDeviceIndex, vr::TrackedDevicePose_t* pOutputPose, vr::TrackedDevicePose_t* pOutputGamePose);
+
+	/** Shared submit textures are not provided by OpenComposite. */
+	ovr_enum_t GetSubmitTexture(vr::Texture_t* pOutTexture, bool* pNeedsFlush, ovr_enum_t eUsage,
+	    const vr::Texture_t* pTexture, const vr::VRTextureBounds_t* pBounds, vr::EVRSubmitFlags nSubmitFlags);
 
 	/** Updated scene texture to display. If pBounds is NULL the entire texture will be used.  If called from an OpenGL app, consider adding a glFlush after
 	 * Submitting both frames to signal the driver to start processing, otherwise it may wait until the command buffer fills up, causing the app to miss frames.

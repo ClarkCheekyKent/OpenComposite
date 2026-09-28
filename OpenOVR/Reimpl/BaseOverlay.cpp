@@ -11,6 +11,9 @@
 #include "convert.h"
 #include "generated/static_bases.gen.h"
 #include <string>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 using glm::mat4;
 using glm::vec3;
@@ -25,6 +28,7 @@ public:
 	HmdColor_t colour;
 
 	float widthMeters = 1; // default 1 meter
+	float curvature = 0; // Stored for OpenVR queries; OpenXR quad layers remain flat.
 
 	float autoCurveDistanceRangeMin, autoCurveDistanceRangeMax; // WTF does this do?
 	EColorSpace colourSpace = ColorSpace_Auto;
@@ -34,6 +38,7 @@ public:
 	HmdVector2_t mouseScale = { 1.0f, 1.0f };
 	bool highQuality = false;
 	uint64_t flags = 0;
+	uint32_t renderingPid = 0;
 	float texelAspect = 1;
 	std::queue<VREvent_t> eventQueue;
 
@@ -61,6 +66,11 @@ public:
 	OverlayData(string key, string name)
 	    : key(key), name(name)
 	{
+#ifdef _WIN32
+		renderingPid = GetCurrentProcessId();
+#else
+		renderingPid = static_cast<uint32_t>(getpid());
+#endif
 	}
 };
 
@@ -202,6 +212,12 @@ EVROverlayError BaseOverlay::CreateOverlay(const char* pchOverlayKey, const char
 
 	return VROverlayError_None;
 }
+EVROverlayError BaseOverlay::CreateSubviewOverlay(VROverlayHandle_t, const char*, const char*, VROverlayHandle_t* pSubviewOverlayHandle)
+{
+	if (pSubviewOverlayHandle)
+		*pSubviewOverlayHandle = k_ulOverlayHandleInvalid;
+	return VROverlayError_RequestFailed;
+}
 EVROverlayError BaseOverlay::DestroyOverlay(VROverlayHandle_t ulOverlayHandle)
 {
 	USEH();
@@ -337,11 +353,16 @@ const char* BaseOverlay::GetOverlayErrorNameFromEnum(EVROverlayError error)
 }
 EVROverlayError BaseOverlay::SetOverlayRenderingPid(VROverlayHandle_t ulOverlayHandle, uint32_t unPID)
 {
-	STUBBED();
+	USEH();
+	overlay->renderingPid = unPID;
+	return VROverlayError_None;
 }
 uint32_t BaseOverlay::GetOverlayRenderingPid(VROverlayHandle_t ulOverlayHandle)
 {
-	STUBBED();
+	OverlayData* overlay = (OverlayData*)ulOverlayHandle;
+	if (!overlay || !validOverlays.count(overlay))
+		return 0;
+	return overlay->renderingPid;
 }
 EVROverlayError BaseOverlay::SetOverlayFlag(VROverlayHandle_t ulOverlayHandle, VROverlayFlags eOverlayFlag, bool bEnabled)
 {
@@ -445,11 +466,19 @@ EVROverlayError BaseOverlay::GetOverlayWidthInMeters(VROverlayHandle_t ulOverlay
 }
 EVROverlayError BaseOverlay::SetOverlayCurvature(VROverlayHandle_t ulOverlayHandle, float fCurvature)
 {
-	STUBBED();
+	USEH();
+	if (fCurvature < 0 || fCurvature > 1)
+		return VROverlayError_InvalidParameter;
+	overlay->curvature = fCurvature;
+	return VROverlayError_None;
 }
 EVROverlayError BaseOverlay::GetOverlayCurvature(VROverlayHandle_t ulOverlayHandle, float* pfCurvature)
 {
-	STUBBED();
+	USEH();
+	if (!pfCurvature)
+		return VROverlayError_InvalidParameter;
+	*pfCurvature = overlay->curvature;
+	return VROverlayError_None;
 }
 EVROverlayError BaseOverlay::SetOverlayAutoCurveDistanceRangeInMeters(VROverlayHandle_t ulOverlayHandle, float fMinDistanceInMeters, float fMaxDistanceInMeters)
 {
@@ -592,6 +621,10 @@ EVROverlayError BaseOverlay::SetOverlayTransformProjection(VROverlayHandle_t ulO
 {
 	STUBBED();
 }
+EVROverlayError BaseOverlay::SetSubviewPosition(VROverlayHandle_t, float, float)
+{
+	return VROverlayError_RequestFailed;
+}
 EVROverlayError BaseOverlay::ShowOverlay(VROverlayHandle_t ulOverlayHandle)
 {
 	USEH();
@@ -676,7 +709,8 @@ bool BaseOverlay::HandleControllerOverlayInteractionAsMouse(VROverlayHandle_t ul
 }
 bool BaseOverlay::IsHoverTargetOverlay(VROverlayHandle_t ulOverlayHandle)
 {
-	STUBBED();
+	// OpenComposite does not currently generate virtual mouse hover events.
+	return false;
 }
 VROverlayHandle_t BaseOverlay::GetGamepadFocusOverlay()
 {

@@ -34,6 +34,20 @@ float4 ps_fs(psIn inputPS) : SV_TARGET
 {
 	float4 textureColor = shaderTexture.Sample(SampleType, inputPS.tex);
 	return textureColor;
+}
+
+cbuffer CopyParams : register(b0) {
+	int sourceLeft;
+	int sourceHeight;
+	int invertY;
+	int padding;
+};
+
+float4 ps_convert(psIn inputPS) : SV_TARGET
+{
+	int2 pixel = int2(inputPS.pos.xy);
+	int y = invertY != 0 ? sourceHeight - 1 - pixel.y : pixel.y;
+	return shaderTexture.Load(int3(pixel.x + sourceLeft, y, 0));
 })_";
 
 static void XTrace(LPCSTR lpszFormat, ...)
@@ -108,8 +122,18 @@ DX11Compositor::DX11Compositor(ID3D11Texture2D* initial)
 	// Shaders for inverting copy
 	ID3DBlob* fs_vert_shader_blob = d3d_compile_shader(fs_shader_code, "vs_fs", "vs_5_0");
 	ID3DBlob* fs_pixel_shader_blob = d3d_compile_shader(fs_shader_code, "ps_fs", "ps_5_0");
+	ID3DBlob* fs_convert_shader_blob = d3d_compile_shader(fs_shader_code, "ps_convert", "ps_5_0");
 	OOVR_FAILED_DX_ABORT(device->CreateVertexShader(fs_vert_shader_blob->GetBufferPointer(), fs_vert_shader_blob->GetBufferSize(), nullptr, &fs_vshader));
 	OOVR_FAILED_DX_ABORT(device->CreatePixelShader(fs_pixel_shader_blob->GetBufferPointer(), fs_pixel_shader_blob->GetBufferSize(), nullptr, &fs_pshader));
+	OOVR_FAILED_DX_ABORT(device->CreatePixelShader(fs_convert_shader_blob->GetBufferPointer(), fs_convert_shader_blob->GetBufferSize(), nullptr, &fs_convert_pshader));
+	fs_vert_shader_blob->Release();
+	fs_pixel_shader_blob->Release();
+	fs_convert_shader_blob->Release();
+	D3D11_BUFFER_DESC constantsDesc = {};
+	constantsDesc.ByteWidth = 16;
+	constantsDesc.Usage = D3D11_USAGE_DEFAULT;
+	constantsDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	OOVR_FAILED_DX_ABORT(device->CreateBuffer(&constantsDesc, nullptr, &convert_constants));
 
 	// Create a texture sampler state description.
 	D3D11_SAMPLER_DESC samplerDesc;
@@ -142,6 +166,11 @@ DX11Compositor::~DX11Compositor()
 		tex->Release();
 
 	resolvedMSAATextures.clear();
+	convert_constants->Release();
+	fs_convert_pshader->Release();
+	fs_pshader->Release();
+	fs_vshader->Release();
+	quad_sampleState->Release();
 
 	context->Release();
 	device->Release();
@@ -229,6 +258,7 @@ void DX11Compositor::CheckCreateSwapChain(const vr::Texture_t* texture, const vr
 		createInfoFormat = srcDesc.Format;
 
 		// Make eye render buffer
+		formatConversionNeeded = false;
 		desc = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
 		// TODO desc.Type = cube ? ovrTexture_Cube : ovrTexture_2D;
 		desc.faceCount = cube ? 6 : 1;
@@ -241,8 +271,32 @@ void DX11Compositor::CheckCreateSwapChain(const vr::Texture_t* texture, const vr
 		desc.usageFlags = XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
 
 		XrResult result = xrCreateSwapchain(xr_session.get(), &desc, &chain);
+		if (result == XR_ERROR_SWAPCHAIN_FORMAT_UNSUPPORTED && type == DXGI_FORMAT_R10G10B10A2_UNORM && !cube) {
+			uint32_t formatCount = 0;
+			OOVR_FAILED_XR_ABORT(xrEnumerateSwapchainFormats(xr_session.get(), 0, &formatCount, nullptr));
+			std::vector<int64_t> supportedFormats(formatCount);
+			OOVR_FAILED_XR_ABORT(xrEnumerateSwapchainFormats(xr_session.get(), formatCount, &formatCount, supportedFormats.data()));
+			const DXGI_FORMAT alternatives[] = {
+				DXGI_FORMAT_R8G8B8A8_UNORM,
+				DXGI_FORMAT_B8G8R8A8_UNORM,
+				DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+				DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+			};
+			for (DXGI_FORMAT alternative : alternatives) {
+				if (std::find(supportedFormats.begin(), supportedFormats.end(), static_cast<int64_t>(alternative)) == supportedFormats.end())
+					continue;
+				desc.format = alternative;
+				result = xrCreateSwapchain(xr_session.get(), &desc, &chain);
+				if (XR_SUCCEEDED(result)) {
+					type = alternative;
+					formatConversionNeeded = true;
+					OOVR_LOGF("Converting 10-bit DX texture to supported swapchain format %d", alternative);
+					break;
+				}
+			}
+		}
 		if (!XR_SUCCEEDED(result))
-			OOVR_ABORTF("Cannot create DX texture swap chain: err %d", result);
+			OOVR_ABORTF("Cannot create DX texture swap chain: err %d, format %d", result, desc.format);
 
 		// Go through the images and retrieve them - this will be used later in Invoke, since OpenXR doesn't
 		// have a convenient way to request one specific image.
@@ -326,10 +380,20 @@ void DX11Compositor::CopyToSwapchain(const vr::Texture_t* texture, const vr::VRT
 	sourceRegion.back = 1;
 
 	// Bounds describe an inverted image so copy texture using pixel shader inverting on copy
-	if (bounds && bounds->vMin > bounds->vMax && oovr_global_configuration.InvertUsingShaders() && !swapchain_rtvs.empty()) {
-		auto* src = (ID3D11Texture2D*)texture->handle;
+	const bool invertWithShader = bounds && bounds->vMin > bounds->vMax && oovr_global_configuration.InvertUsingShaders();
+	if ((invertWithShader || formatConversionNeeded) && !swapchain_rtvs.empty()) {
+		ID3D11Texture2D* shaderSource = src;
+		if (formatConversionNeeded && srcDesc.SampleDesc.Count > 1) {
+			context->ResolveSubresource(resolvedMSAATextures[currentIndex], 0, src, 0, srcDesc.Format);
+			shaderSource = resolvedMSAATextures[currentIndex];
+		}
 
-		OOVR_FAILED_DX_ABORT(device->CreateShaderResourceView(src, nullptr, &quad_texture_view));
+		OOVR_FAILED_DX_ABORT(device->CreateShaderResourceView(shaderSource, nullptr, &quad_texture_view));
+		if (formatConversionNeeded) {
+			const int copyParams[4] = { static_cast<int>(sourceRegion.left), static_cast<int>(createInfo.height), invertWithShader ? 1 : 0, 0 };
+			context->UpdateSubresource(convert_constants, 0, nullptr, copyParams, 0, 0);
+			context->PSSetConstantBuffers(0, 1, &convert_constants);
+		}
 
 		float blend_factor[4] = { 1.f, 1.f, 1.f, 1.f };
 		context->OMSetBlendState(nullptr, nullptr, 0xffffffff);
@@ -367,7 +431,7 @@ void DX11Compositor::CopyToSwapchain(const vr::Texture_t* texture, const vr::VRT
 		// Set the active shaders and constant buffers.
 		context->PSSetShaderResources(0, 1, &quad_texture_view);
 		context->VSSetShader(fs_vshader, nullptr, 0);
-		context->PSSetShader(fs_pshader, nullptr, 0);
+		context->PSSetShader(formatConversionNeeded ? fs_convert_pshader : fs_pshader, nullptr, 0);
 		context->PSSetSamplers(0, 1, &quad_sampleState);
 
 		// Set up the mesh's information

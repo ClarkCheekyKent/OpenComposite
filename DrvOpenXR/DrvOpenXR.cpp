@@ -27,9 +27,9 @@ static bool initialised = false;
 std::string GetExeName()
 {
 	char exePath[MAX_PATH + 1] = { 0 };
-	DWORD len = GetModuleFileNameA(NULL, exePath, MAX_PATH);
-	PathStripPathA(exePath);
-	return { exePath };
+	GetModuleFileNameA(NULL, exePath, MAX_PATH);
+	std::string path(exePath);
+	return path.substr(path.find_last_of("\\/") + 1);
 }
 #else
 #include <libgen.h> // basename

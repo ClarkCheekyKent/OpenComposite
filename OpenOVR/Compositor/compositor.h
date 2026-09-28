@@ -3,7 +3,9 @@
 #include "generated/interfaces/vrtypes.h"
 #ifdef WIN32
 // Windows template libraries
+#ifdef SUPPORT_DX10
 #include <atlbase.h>
+#endif
 #include <wrl/client.h>
 #endif
 

@@ -9,6 +9,7 @@
 #include "../OpenOVR/Reimpl/BaseSystem.h"
 #include "../OpenOVR/convert.h"
 #include "generated/static_bases.gen.h"
+#include <chrono>
 #include <thread>
 #include <mutex>
 

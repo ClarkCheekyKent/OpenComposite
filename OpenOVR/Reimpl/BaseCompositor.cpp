@@ -177,6 +177,18 @@ ovr_enum_t BaseCompositor::GetLastPoseForTrackedDeviceIndex(TrackedDeviceIndex_t
 	return VRCompositorError_None;
 }
 
+ovr_enum_t BaseCompositor::GetSubmitTexture(Texture_t* pOutTexture, bool* pNeedsFlush, ovr_enum_t,
+    const Texture_t*, const VRTextureBounds_t*, EVRSubmitFlags)
+{
+	if (pOutTexture) {
+		*pOutTexture = {};
+	}
+	if (pNeedsFlush) {
+		*pNeedsFlush = false;
+	}
+	return VRCompositorError_RequestFailed;
+}
+
 #if !defined(OC_XR_PORT) && defined(SUPPORT_DX) && defined(SUPPORT_DX11)
 DX11Compositor* BaseCompositor::dxcomp;
 #endif
