@@ -53,3 +53,8 @@
 
 # clangd cache
 .cache/
+
+# Release packages are published through GitHub Releases
+/dist/*.zip
+/dist/x64/*.dll
+/dist/x86/*.dll

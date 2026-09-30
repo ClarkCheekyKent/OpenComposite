@@ -1,0 +1,17 @@
+name: Gaze tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  gaze:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: cmake -S tests -B build/gaze-tests
+      - run: cmake --build build/gaze-tests --config Release
+      - run: ctest --test-dir build/gaze-tests -C Release --output-on-failure

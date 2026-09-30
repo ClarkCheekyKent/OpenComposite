@@ -35,6 +35,8 @@ XrExt::XrExt(XrGraphicsApiSupportedFlags apis, const std::vector<const char*>& e
 			hasVisMask = true;
 		if (strcmp(ext, XR_EXT_HAND_TRACKING_EXTENSION_NAME) == 0)
 			hasHandTracking = true;
+		if (strcmp(ext, XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME) == 0)
+			supportsEyeGaze = true;
 		if (strcmp(ext, XR_EXT_HP_MIXED_REALITY_CONTROLLER_EXTENSION_NAME) == 0)
 			supportsG2Controller = true;
 		if (strcmp(ext, XR_MNDX_XDEV_SPACE_EXTENSION_NAME) == 0)
@@ -46,6 +48,15 @@ XrExt::XrExt(XrGraphicsApiSupportedFlags apis, const std::vector<const char*>& e
 
 	if (hasVisMask)
 		XR_BIND_OPT(xrGetVisibilityMaskKHR, pfnXrGetVisibilityMaskKHR);
+	for (const char* ext : extensions) {
+#ifdef _WIN32
+		if (strcmp(ext, XR_KHR_WIN32_CONVERT_PERFORMANCE_COUNTER_TIME_EXTENSION_NAME) == 0)
+			XR_BIND_OPT(xrConvertWin32PerformanceCounterToTimeKHR, pfnConvertCounterToTime);
+#else
+		if (strcmp(ext, XR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME) == 0)
+			XR_BIND_OPT(xrConvertTimespecTimeToTimeKHR, pfnConvertTimespecToTime);
+#endif
+	}
 
 	if (hasHandTracking) {
 		XR_BIND(xrCreateHandTrackerEXT, pfnXrCreateHandTrackerExt);
@@ -99,6 +110,19 @@ XrExt::XrExt(XrGraphicsApiSupportedFlags apis, const std::vector<const char*>& e
 #undef XR_BIND_OPT
 }
 
+bool XrExt::TryGetCurrentXrTime(XrTime& time) const
+{
+#ifdef _WIN32
+	LARGE_INTEGER counter;
+	return pfnConvertCounterToTime && QueryPerformanceCounter(&counter)
+	    && XR_SUCCEEDED(pfnConvertCounterToTime(xr_instance, &counter, &time));
+#else
+	struct timespec now;
+	return pfnConvertTimespecToTime && clock_gettime(CLOCK_MONOTONIC, &now) == 0
+	    && XR_SUCCEEDED(pfnConvertTimespecToTime(xr_instance, &now, &time));
+#endif
+}
+
 XrSessionGlobals::XrSessionGlobals()
 {
 	XrReferenceSpaceCreateInfo spaceInfo{ XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
@@ -120,6 +144,10 @@ XrSessionGlobals::XrSessionGlobals()
 	// Read the system properties, including those for hand-tracking
 	if (xr_ext->handTrackingExtensionAvailable())
 		systemProperties.next = &handTrackingProperties;
+	if (xr_ext->eyeGazeInteractionAvailable()) {
+		eyeGazeProperties.next = systemProperties.next;
+		systemProperties.next = &eyeGazeProperties;
+	}
 	OOVR_FAILED_XR_ABORT(xrGetSystemProperties(xr_instance, xr_system, &systemProperties));
 }
 

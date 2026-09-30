@@ -121,7 +121,7 @@ if (WIN32)
 	add_compile_definitions(XR_OS_WINDOWS XR_USE_PLATFORM_WIN32
 		XR_USE_GRAPHICS_API_D3D11 XR_USE_GRAPHICS_API_D3D12)
 else()
-	add_compile_definitions(XR_OS_LINUX XR_USE_PLATFORM_XLIB)
+	add_compile_definitions(XR_OS_LINUX XR_USE_PLATFORM_XLIB XR_USE_TIMESPEC)
 endif()
 
 if (USE_SYSTEM_OPENXR)

@@ -3,6 +3,9 @@
 //
 
 #pragma once
+#ifndef _WIN32
+#include <time.h>
+#endif
 
 // TODO Turtle1331 it would be nicer to include OpenXR-SDK's xr_dependencies.h if possible
 #if defined(SUPPORT_DX) && defined(SUPPORT_DX11)
@@ -66,6 +69,8 @@ public:
 	XrExt(XrGraphicsApiSupportedFlags apis, const std::vector<const char*>& extensions);
 
 	bool G2Controller_Available() { return supportsG2Controller; }
+	bool eyeGazeInteractionAvailable() const { return supportsEyeGaze; }
+	bool TryGetCurrentXrTime(XrTime& time) const;
 	bool xrGetVisibilityMaskKHR_Available() { return pfnXrGetVisibilityMaskKHR != nullptr; }
 	bool xrMndxXdevSpace_Available() { return pfnxrCreateXDevSpaceMNDX != nullptr; }
 
@@ -221,6 +226,12 @@ private:
 	PFN_xrCreateXDevSpaceMNDX pfnxrCreateXDevSpaceMNDX = nullptr;
 
 	bool supportsG2Controller = false;
+	bool supportsEyeGaze = false;
+#ifdef _WIN32
+	PFN_xrConvertWin32PerformanceCounterToTimeKHR pfnConvertCounterToTime = nullptr;
+#else
+	PFN_xrConvertTimespecTimeToTimeKHR pfnConvertTimespecToTime = nullptr;
+#endif
 
 #if defined(SUPPORT_DX) && defined(SUPPORT_DX11)
 	PFN_xrGetD3D11GraphicsRequirementsKHR pfnXrGetD3D11GraphicsRequirementsKHR = nullptr;

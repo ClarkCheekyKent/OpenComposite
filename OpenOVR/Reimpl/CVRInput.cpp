@@ -8,6 +8,7 @@ GEN_INTERFACE("Input", "006")
 GEN_INTERFACE("Input", "007")
 // version 8 and 9 are skipped
 GEN_INTERFACE("Input", "010")
+GEN_INTERFACE("Input", "011")
 
 #include "generated/GVRInput.gen.h"
 

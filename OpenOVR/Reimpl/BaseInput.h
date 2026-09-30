@@ -267,6 +267,10 @@ public:
 	/** Sets the dominant hand for the user for this application. */
 	EVRInputError SetDominantHand(vr::ETrackedControllerRole eDominantHand);
 
+	// Input 011 gaze queries use XR_EXT_eye_gaze_interaction when supplied by the runtime.
+	EVRInputError GetEyeTrackingDataRelativeToNow(VRActionHandle_t action, ETrackingUniverseOrigin eOrigin, float fPredictedSecondsFromNow, vr::VREyeTrackingData_t* pEyeTrackingData, uint32_t ulEyeTrackingDataSize);
+	EVRInputError GetEyeTrackingDataForNextFrame(VRActionHandle_t action, ETrackingUniverseOrigin eOrigin, vr::VREyeTrackingData_t* pEyeTrackingData, uint32_t ulEyeTrackingDataSize);
+
 	// ---------------  Static Skeletal Data ------------------- //
 
 	/** Reads the number of bones in skeleton associated with the given action */
@@ -429,6 +433,7 @@ private:
 		Vibration,
 		Pose,
 		Skeleton,
+		EyeTracking,
 	};
 
 	enum class ActionSetUsage {
@@ -643,6 +648,8 @@ private:
 		// Only used in the case of Pose actions, this is the action space for each subaction path
 		// The indexes match up with allSubactionPaths
 		std::vector<XrSpace> actionSpaces;
+		// Session-owned space for the combined eye gaze action. Reset on session recreation.
+		XrSpace eyeGazeSpace = XR_NULL_HANDLE;
 
 		// Only used in float/vector actions, for calculating deltas
 		struct {
@@ -673,6 +680,7 @@ private:
 		INVALID,
 		HAND_LEFT,
 		HAND_RIGHT,
+		EYES,
 		// HMD and Gamepad can go in here if necessary
 	};
 
@@ -828,6 +836,7 @@ private:
 
 	// Utility functions
 	Action* cast_AH(VRActionHandle_t);
+	EVRInputError ReadEyeTrackingData(VRActionHandle_t action, ETrackingUniverseOrigin eOrigin, std::optional<float> secondsFromNow, vr::VREyeTrackingData_t* data, uint32_t dataSize);
 	ActionSet* cast_ASH(VRActionSetHandle_t);
 	static InputValueHandle* cast_IVH(VRInputValueHandle_t);
 	static std::shared_ptr<ITrackedDevice> ivhToDev(VRInputValueHandle_t handle);

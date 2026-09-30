@@ -30,6 +30,9 @@
 #include <utility>
 
 #include "Misc/xrmoreutils.h"
+#include "Misc/xr_ext.h"
+#include "Misc/EyeGaze.h"
+#include <limits>
 
 // Use RenderModels for the pose offsets, which are the same as component positions
 #include "BaseRenderModels.h"
@@ -454,6 +457,8 @@ EVRInputError BaseInput::SetActionManifestPath(const char* pchActionManifestPath
 			action.type = ActionType::Pose;
 		else if (type == "skeleton")
 			action.type = ActionType::Skeleton;
+		else if (type == "eyetracking")
+			action.type = ActionType::EyeTracking;
 		else
 			OOVR_ABORTF("Invalid action type '%s' for action '%s'", type.c_str(), action.fullName.c_str());
 
@@ -550,6 +555,11 @@ EVRInputError BaseInput::SetActionManifestPath(const char* pchActionManifestPath
 		OOVR_FAILED_XR_ABORT(xrCreateActionSet(xr_instance, &createInfo, &as->xr));
 	}
 
+	std::vector<XrActionSuggestedBinding> gazeBindings;
+	XrPath gazePath = XR_NULL_PATH;
+	if (xr_ext->eyeGazeInteractionAvailable())
+		OOVR_FAILED_XR_ABORT(xrStringToPath(xr_instance, "/user/eyes_ext/input/gaze_ext/pose", &gazePath));
+
 	for (const std::unique_ptr<Action>& act : actions.GetItems()) {
 		XrActionCreateInfo info = { XR_TYPE_ACTION_CREATE_INFO };
 		std::string safeName = escapePathString(act->shortName);
@@ -572,6 +582,9 @@ EVRInputError BaseInput::SetActionManifestPath(const char* pchActionManifestPath
 		case ActionType::Vibration:
 			info.actionType = XR_ACTION_TYPE_VIBRATION_OUTPUT;
 			break;
+		case ActionType::EyeTracking:
+			info.actionType = XR_ACTION_TYPE_POSE_INPUT;
+			break;
 		case ActionType::Pose:
 			// Poses are special, since they have offsets
 			continue;
@@ -583,10 +596,23 @@ EVRInputError BaseInput::SetActionManifestPath(const char* pchActionManifestPath
 		}
 
 		// Listen on all the subactions
-		info.subactionPaths = allSubactionPaths.data();
-		info.countSubactionPaths = allSubactionPaths.size();
+		if (act->type != ActionType::EyeTracking) {
+			info.subactionPaths = allSubactionPaths.data();
+			info.countSubactionPaths = allSubactionPaths.size();
+		}
 
 		OOVR_FAILED_XR_ABORT(xrCreateAction(act->set->xr, &info, &act->xr));
+		if (act->type == ActionType::EyeTracking && gazePath != XR_NULL_PATH)
+			gazeBindings.push_back({ act->xr, gazePath });
+	}
+
+	if (!gazeBindings.empty()) {
+		XrInteractionProfileSuggestedBinding info{ XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING };
+		OOVR_FAILED_XR_ABORT(xrStringToPath(xr_instance, "/interaction_profiles/ext/eye_gaze_interaction", &info.interactionProfile));
+		info.countSuggestedBindings = static_cast<uint32_t>(gazeBindings.size());
+		info.suggestedBindings = gazeBindings.data();
+		OOVR_FAILED_XR_ABORT(xrSuggestInteractionProfileBindings(xr_instance, &info));
+		OOVR_LOGF("Bound %zu eye tracking actions to OpenXR combined gaze", gazeBindings.size());
 	}
 
 	CreateLegacyActions();
@@ -718,6 +744,13 @@ void BaseInput::BindInputsForSession()
 	// Since the session has changed, any actionspaces we previously created are now invalid
 	for (const std::unique_ptr<Action>& action : actions.GetItems()) {
 		action->actionSpaces.clear();
+		action->eyeGazeSpace = XR_NULL_HANDLE;
+		if (action->type == ActionType::EyeTracking && xr_ext->eyeGazeInteractionAvailable()) {
+			XrActionSpaceCreateInfo info{ XR_TYPE_ACTION_SPACE_CREATE_INFO };
+			info.action = action->xr;
+			info.poseInActionSpace.orientation.w = 1.0f;
+			OOVR_FAILED_XR_ABORT(xrCreateActionSpace(xr_session.get(), &info, &action->eyeGazeSpace));
+		}
 	}
 
 	// Same goes for the actionspaces of the legacy controller pose actions, this time create
@@ -825,6 +858,9 @@ void BaseInput::LoadBindingsSet(const InteractionProfile& profile, const std::st
 					OOVR_LOGF("WARNING: Action '%s' (from binding file %s) does not exist in manifest, skipping", actionName.c_str(), bindingsPath.c_str());
 					continue;
 				}
+				// Gaze is bound separately to the eye profile, never to a controller source.
+				if (action->type == ActionType::EyeTracking)
+					continue;
 
 				if (srcJson["mode"].asString() == "dpad") {
 					LoadDpadAction(profile, importBasePath, inputName, srcJson["parameters"]["sub_mode"].asString(), action, bindings, isKnuckles);
@@ -953,6 +989,8 @@ void BaseInput::LoadBindingsSet(const InteractionProfile& profile, const std::st
 			}
 
 			PoseBindingInfo info;
+			if (action->type == ActionType::EyeTracking)
+				continue;
 
 			// Find which hand this is from - on a path like /user/hand/left/pose/raw, after this
 			// we're left with pose/raw.
@@ -1273,6 +1311,7 @@ EVRInputError BaseInput::GetInputSourceHandle(const char* pchInputSourcePath, VR
 	// Yes, this will let through something like/user/hand/leftblah but it's probably not an issue
 	static std::string leftHand = "/user/hand/left";
 	static std::string rightHand = "/user/hand/right";
+	static std::string eyes = "/user/eyes_ext";
 	if (strncmp(pchInputSourcePath, leftHand.c_str(), leftHand.size()) == 0) {
 		handle->type = InputSource::HAND_LEFT;
 		handle->devicePathString = leftHand;
@@ -1281,12 +1320,17 @@ EVRInputError BaseInput::GetInputSourceHandle(const char* pchInputSourcePath, VR
 		handle->type = InputSource::HAND_RIGHT;
 		handle->devicePathString = rightHand;
 	}
+	if (strncmp(pchInputSourcePath, eyes.c_str(), eyes.size()) == 0) {
+		handle->type = InputSource::EYES;
+		handle->devicePathString = eyes;
+	}
 
 	if (!handle->devicePathString.empty()) {
 		OOVR_FAILED_XR_ABORT(xrStringToPath(xr_instance, handle->devicePathString.c_str(), &handle->devicePath));
 
 		// Very much should always be true, but guard against any nasty surprises
-		OOVR_FALSE_ABORT(std::count(allSubactionPaths.begin(), allSubactionPaths.end(), handle->devicePath));
+		if (handle->type != InputSource::EYES)
+			OOVR_FALSE_ABORT(std::count(allSubactionPaths.begin(), allSubactionPaths.end(), handle->devicePath));
 	}
 
 	inputHandleRegistry[pchInputSourcePath] = std::move(handle);
@@ -1965,6 +2009,56 @@ EVRInputError BaseInput::SetDominantHand(vr::ETrackedControllerRole eDominantHan
 		return VRInputError_PermissionDenied;
 	}
 }
+EVRInputError BaseInput::GetEyeTrackingDataRelativeToNow(VRActionHandle_t action, ETrackingUniverseOrigin eOrigin, float fPredictedSecondsFromNow, vr::VREyeTrackingData_t* pEyeTrackingData, uint32_t ulEyeTrackingDataSize)
+{
+	return ReadEyeTrackingData(action, eOrigin, fPredictedSecondsFromNow, pEyeTrackingData, ulEyeTrackingDataSize);
+}
+EVRInputError BaseInput::GetEyeTrackingDataForNextFrame(VRActionHandle_t action, ETrackingUniverseOrigin eOrigin, vr::VREyeTrackingData_t* pEyeTrackingData, uint32_t ulEyeTrackingDataSize)
+{
+	return ReadEyeTrackingData(action, eOrigin, std::nullopt, pEyeTrackingData, ulEyeTrackingDataSize);
+}
+EVRInputError BaseInput::ReadEyeTrackingData(VRActionHandle_t action, ETrackingUniverseOrigin eOrigin, std::optional<float> secondsFromNow, vr::VREyeTrackingData_t* data, uint32_t dataSize)
+{
+	if (!data)
+		return VRInputError_InvalidParam;
+	if (dataSize < sizeof(*data))
+		return VRInputError_BufferTooSmall;
+	*data = {};
+	GET_ACTION_FROM_HANDLE(act, action);
+	if (act->type != ActionType::EyeTracking)
+		return VRInputError_WrongType;
+	if (eOrigin != TrackingUniverseSeated && eOrigin != TrackingUniverseStanding && eOrigin != TrackingUniverseRawAndUncalibrated)
+		return VRInputError_InvalidParam;
+	if (secondsFromNow && !std::isfinite(*secondsFromNow))
+		return VRInputError_InvalidParam;
+
+	auto sessionLock = xr_session.lock_shared();
+	if (!xr_gbl || !xr_ext->eyeGazeInteractionAvailable() || !xr_gbl->eyeGazeProperties.supportsEyeGazeInteraction || act->eyeGazeSpace == XR_NULL_HANDLE)
+		return VRInputError_None; // No tracker, permission, or session: inactive, never fabricated gaze.
+
+	XrTime time = xr_gbl->GetBestTime();
+	if (secondsFromNow) {
+		XrTime currentTime = 0;
+		if (xr_ext->TryGetCurrentXrTime(currentTime) && currentTime > 0)
+			time = currentTime;
+		else
+			OOVR_LOG_ONCE("OpenXR clock conversion unavailable; relative gaze times use the latest frame time");
+		const long double requested = static_cast<long double>(time) + static_cast<long double>(*secondsFromNow) * 1000000000.0L;
+		if (requested < 1.0L || requested >= static_cast<long double>(std::numeric_limits<XrTime>::max()))
+			return VRInputError_InvalidParam;
+		time = static_cast<XrTime>(requested);
+	}
+	// OpenXR has no SteamVR raw tracking universe. Its unmodified stage is the closest equivalent.
+	XrSpace baseSpace = eOrigin == TrackingUniverseSeated ? xr_gbl->seatedSpace : xr_gbl->floorSpace;
+	XrResult result = xr_utils::ReadEyeGaze(xr_session.get(), act->xr, act->eyeGazeSpace, baseSpace, time, *data);
+	if (result == XR_ERROR_TIME_INVALID)
+		return VRInputError_InvalidParam;
+	if (XR_FAILED(result)) {
+		OOVR_LOGF("OpenXR eye gaze query failed: %d", result);
+		return VRInputError_IPCError;
+	}
+	return VRInputError_None;
+}
 EVRInputError BaseInput::GetBoneCount(VRActionHandle_t action, uint32_t* pBoneCount)
 {
 	// Maybe we should check the action?
@@ -2356,6 +2450,15 @@ EVRInputError BaseInput::GetOriginLocalizedName(VRInputValueHandle_t origin, VR_
 {
 	if (origin == vr::k_ulInvalidInputValueHandle)
 		return vr::VRInputError_InvalidHandle;
+	if (cast_IVH(origin)->type == InputSource::EYES) {
+		if (!pchNameArray || unNameArraySize == 0)
+			return VRInputError_MaxCapacityReached;
+		const std::string name = unStringSectionsToInclude ? "Eye Gaze" : "";
+		const size_t count = std::min(name.size(), static_cast<size_t>(unNameArraySize - 1));
+		std::copy_n(name.data(), count, pchNameArray);
+		pchNameArray[count] = '\0';
+		return count == name.size() ? VRInputError_None : VRInputError_MaxCapacityReached;
+	}
 
 	std::shared_ptr<ITrackedDevice> dev = ivhToDev(origin);
 
@@ -2421,6 +2524,10 @@ EVRInputError BaseInput::GetOriginTrackedDeviceInfo(VRInputValueHandle_t origin,
 
 	info->trackedDeviceIndex = dev->DeviceIndex();
 	info->devicePath = origin;
+	if (cast_IVH(origin)->type == InputSource::EYES) {
+		strcpy_arr(info->rchRenderModelComponentName, "gaze");
+		return VRInputError_None;
+	}
 	strcpy_arr(info->rchRenderModelComponentName, "getorigintrackeddeviceinfo_testing"); // TODO figure out how this should work
 
 	return VRInputError_None;
@@ -2464,6 +2571,13 @@ EVRInputError BaseInput::GetActionBindingInfo(VRActionHandle_t actionHandle, OOV
 		std::vector<char> chars(pathLen);
 		OOVR_FAILED_XR_ABORT(xrPathToString(xr_instance, path, chars.size(), &pathLen, chars.data()));
 		std::string pathStr(chars.data(), chars.size());
+		if (action->type == ActionType::EyeTracking) {
+			strcpy_arr(info.rchDevicePathName, "/user/eyes_ext");
+			strcpy_arr(info.rchInputPathName, "/input/gaze_ext");
+			strcpy_arr(info.rchModeName, "eyetracking");
+			strcpy_arr(info.rchInputSourceType, "eyetracking");
+			continue;
+		}
 
 		std::vector<std::string> parts;
 		stringSplit(pathStr, parts);
@@ -2567,6 +2681,8 @@ std::shared_ptr<ITrackedDevice> BaseInput::ivhToDev(VRInputValueHandle_t handle)
 
 	ITrackedDevice::TrackedDeviceType hand = ITrackedDevice::HAND_NONE;
 	switch (ivh->type) {
+	case InputSource::EYES:
+		return BackendManager::Instance().GetDevice(vr::k_unTrackedDeviceIndex_Hmd);
 	case InputSource::HAND_LEFT:
 		hand = ITrackedDevice::HAND_LEFT;
 		break;

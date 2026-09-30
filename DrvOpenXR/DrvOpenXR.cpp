@@ -223,6 +223,16 @@ IBackend* DrvOpenXR::CreateOpenXRBackend(const char* startupInfo)
 	if (availableExtensions.count(XR_EXT_HAND_TRACKING_EXTENSION_NAME))
 		extensions.push_back(XR_EXT_HAND_TRACKING_EXTENSION_NAME);
 
+	if (availableExtensions.count(XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME))
+		extensions.push_back(XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME);
+#ifdef _WIN32
+	if (availableExtensions.count(XR_KHR_WIN32_CONVERT_PERFORMANCE_COUNTER_TIME_EXTENSION_NAME))
+		extensions.push_back(XR_KHR_WIN32_CONVERT_PERFORMANCE_COUNTER_TIME_EXTENSION_NAME);
+#else
+	if (availableExtensions.count(XR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME))
+		extensions.push_back(XR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME);
+#endif
+
 	if (availableExtensions.count(XR_MNDX_XDEV_SPACE_EXTENSION_NAME))
 		extensions.push_back(XR_MNDX_XDEV_SPACE_EXTENSION_NAME);
 

@@ -1,16 +1,5 @@
-# OpenComposite OpenVR API builds
+# Experimental Windows builds
 
-These Windows release builds come from OpenComposite commit `cff07db75c4823afe93ed7027b03d5f7bc86f164` with the OpenVR 2.15.6 header, `IVRCompositor_029`, `IVRSystem_026`, and `IVROverlay_028` support added in this workspace.
+Use this fork's GitHub Releases for packaged x64 and x86 DLLs and their matching tagged source. Build outputs in `x64/` and `x86/` are local artifacts and are not maintained as source files.
 
-- `x64/openvr_api.dll`: 64-bit games
-- `x86/openvr_api.dll`: 32-bit games
-
-Back up the game's original `openvr_api.dll`, then use the DLL matching the game's architecture. Both builds also expose `IVRCompositor_028`.
-
-The new `IVRCompositor_029::GetSubmitTexture` call returns `VRCompositorError_RequestFailed`, since OpenComposite does not provide shared submit textures. Other compositor methods continue to use the existing implementation.
-
-The new `IVRSystem_026` methods for distortion sets and eye tracked foveation report unsupported. Its overlay event method returns ordinary system events with an invalid overlay handle.
-
-The new `IVROverlay_028` subview methods return `VROverlayError_RequestFailed`; subview overlays are not implemented.
-
-Overlay curvature settings can be set and read without aborting, but overlays still render as flat OpenXR quads.
+See [the project README](../README.md) for installation and build instructions, and [interface support](interface-support.md) for implemented features and limitations. Both controller input and supported OpenXR eye-gaze actions use the existing OpenComposite input path.
